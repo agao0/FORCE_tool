@@ -1,0 +1,28 @@
+{ 
+"joint_twist_data": [
+    ["r", [0, 0, 1], [0, 0, 0]],
+    ["r", [0, 0, 1], [0, 5, 0]],
+    ["r", [0, 0, 1], [0, 10, 0]],
+    ["p", [0, 0, 1]]]
+,
+"ref_config": [
+    [1,0,0,0],
+    [0,1,0,0],
+    [0,0,1,0],
+    [0,0,0,1]]
+,
+"generateAdjoint": "True"
+,
+"generateAdjointInverse": "True"
+,
+"generateJacobian": "True"
+,
+"pointsOfInterest": 
+    {"jointNum": 2,
+    "ref_config": [
+        [1,0,0,0],
+        [0,1,0,0],
+        [0,0,1,0],
+        [0,0,0,1]]
+    }
+}
