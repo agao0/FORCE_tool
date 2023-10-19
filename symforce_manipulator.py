@@ -92,16 +92,18 @@ def CHECK_FORMATTING():
 
 ################################################# MAIN ######################################################
 # Parsing, JSON format assumed. The data.json file should have a 'joints' key, whose value is a list in the
-# form: [[omega_1, q_1], [omega_2, q_2], [omega_3, q_3], ...] (each omega/q is also a list)
+# form: ["r", omega, q] for revolute joints or ["p", v] for prismatic joints
 
 try:
-    with open('test2.json') as f:
+    with open('comparison.json') as f:
         data = json.load(f)
         joint_twist_data = data['joint_twist_data']
-        ref_config = sf.Matrix(data['ref_config'])
+        end_effector_ref_config = sf.Matrix(data['end_effector_ref_config'])
         generateAdjoint = data["generateAdjoint"]
         generateAdjointInverse = data["generateAdjointInverse"]
-        generateJacobian = data["generateJacobian"]
+        generateSpatialJacobian = data["generateSpatialJacobian"]
+        generateBodyJacobian = data["generateBodyJacobian"]
+        generatePOIBodyJacobians = data["generatePOIBodyJacobians"]
         pointsOfInterest = data["pointsOfInterest"]
 except: 
     raise Exception("CHECK DATA FORMATTING") 
@@ -115,9 +117,9 @@ class anglesMatrix(sf.Matrix):
 class JacobianMatrix(sf.Matrix):
     SHAPE = (6, NUM_ANGLES)
 
-if pointsOfInterest:
-    class POIMatrix(sf.Matrix):
-        SHAPE = (pointsOfInterest["jointNum"], 1)
+# if pointsOfInterest:
+#     class POIMatrix(sf.Matrix):
+#         SHAPE = (pointsOfInterest["jointNum"], 1)
 
 # Create a list of twist coordinates and twists
 joint_twist_coordinates = []
@@ -130,8 +132,8 @@ for i in joint_twist_data:
         v = n_omega.cross(q)
         t_coords = v.col_join(omega)
     elif i[0] == "p":
-        omega = sf.Matrix(i[1])
-        t_coords = omega.col_join(sf.Matrix31([0, 0, 0]))
+        v = sf.Matrix(i[1])
+        t_coords = v.col_join(sf.Matrix31([0, 0, 0]))
     joint_twist_coordinates += [t_coords]
     joint_twists += [generalWedge(t_coords)]
 
@@ -147,7 +149,7 @@ for i in joint_twist_data:
 def forwardKinematicsMap(joint_angles: anglesMatrix) -> sf.Matrix44:
     expr = [generalExponential(joint_twist_coordinates[i], joint_angles[i]) for i in range(NUM_ANGLES)]
     expr = reduce(lambda x, y: x*y, expr)
-    expr = expr*ref_config
+    expr = expr*end_effector_ref_config
     return expr
 
 # Function to generate adjoint map corresponding to above POE formula that we will convert to C++ function
@@ -196,7 +198,7 @@ def generalInverseAdjointMap(g: sf.Matrix44) -> sf.Matrix66:
 # Ask about double pendulum example which actually uses symbols
 
 # Function to generate J^S_ST(theta) that we will convert to C++ function
-def JacobianMap(joint_angles: anglesMatrix) -> JacobianMatrix:
+def SpatialJacobianMap(joint_angles: anglesMatrix) -> JacobianMatrix:
     ret = joint_twist_coordinates[0]
     current_g = sf.Matrix.eye(4, 4)
 
@@ -206,6 +208,14 @@ def JacobianMap(joint_angles: anglesMatrix) -> JacobianMatrix:
         ret = ret.row_join(next_ret)
 
     return ret
+
+# Function to generate J^B_ST(theta) that we will convert to C++ function
+def BodyJacobianMap(joint_angles: anglesMatrix) -> JacobianMatrix:
+    temp = SpatialJacobianMap(joint_angles)
+    FKM = forwardKinematicsMap(joint_angles)
+    adjoint = generalInverseAdjointMap(FKM)
+
+    return adjoint*temp
 
 # My approach may be inefficient, could consider differentiating and using chain rule instead
 
@@ -231,27 +241,66 @@ if generateAdjointInverse:
     for f in codegen_data.generated_files:
         print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))
 
-if generateJacobian:
-    codegen = Codegen.function(func=JacobianMap, config=CppConfig())
-    codegen_data = codegen.generate_function(output_dir="/tmp/sf_codegen_JacobianMap")
-    print("Jacobian Map generated in {}:".format(codegen_data.output_dir))
+if generateSpatialJacobian:
+    codegen = Codegen.function(func=SpatialJacobianMap, config=CppConfig())
+    codegen_data = codegen.generate_function(output_dir="/tmp/sf_codegen_SpatialJacobianMap")
+    print("Spatial Jacobian Map generated in {}:".format(codegen_data.output_dir))
+    for f in codegen_data.generated_files:
+        print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))
+
+if generateBodyJacobian:
+    codegen = Codegen.function(func=BodyJacobianMap, config=CppConfig())
+    codegen_data = codegen.generate_function(output_dir="/tmp/sf_codegen_BodyJacobianMap")
+    print("Body Jacobian Map generated in {}:".format(codegen_data.output_dir))
     for f in codegen_data.generated_files:
         print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))
 
 
 ######################################### POINTS OF INTEREST ###################################################
+# Assumes the sensors have a position and that they have rotation matrix identity from the base (inertial frame)
+#
 if pointsOfInterest:
-    def forwardKMPOI(joint_angles: POIMatrix) -> sf.Matrix44:
-        expr = [generalExponential(joint_twist_coordinates[i], joint_angles[i]) for i in range(pointsOfInterest["jointNum"])]
-        expr = reduce(lambda x, y: x*y, expr)
-        expr = expr*sf.Matrix(pointsOfInterest["ref_config"])
-        return expr
+    if generatePOIBodyJacobians:
+        for key in pointsOfInterest:
+            def BodyJacobian(joint_angles: anglesMatrix) -> JacobianMatrix:
+                current = pointsOfInterest[key]
+                position = sf.Matrix(current[1])
+                position = position.col_join(sf.Matrix([1]))
+                identity = sf.Matrix.eye(3)
+                identity = identity.col_join(sf.Matrix.zeros(1, 3))
+                g_st0 = identity.row_join(position)
+                # tempJacobian = sf.Matrix(6,1) NO SUCH THING AS EMPTY CONTAINER...CAN'T ACCUMULATE NORMALLY
+                # tried to compute upper, lower, body sensors and jacobians together but was kind of awkward. Keeping "point of interest format"
+                tempJacobian = []
+                for j in range(current[0]):
+                    expr = [generalExponential(joint_twist_coordinates[k], joint_angles[k]) for k in range(j, current[0])]
+                    expr = reduce(lambda x, y: x*y, expr)
+                    expr = expr*g_st0
+                    adjoint = generalInverseAdjointMap(expr)
+                    temp = adjoint*joint_twist_coordinates[j]
+                    tempJacobian += [temp.to_flat_list()]
+                ret = sf.Matrix(tempJacobian).T
+                for i in range(NUM_ANGLES-current[0]):
+                    toAdd = sf.Matrix.zeros(6, 1)
+                    ret = ret.row_join(toAdd)
+                return ret
+
+            codegen = Codegen.function(func=BodyJacobian, config=CppConfig())
+            codegen_data = codegen.generate_function(output_dir="/tmp/sf_codegen_" + key + "_Body_Jacobian")
+            print(key + " Body Jacobian for the POI generated in {}:".format(codegen_data.output_dir))
+            for f in codegen_data.generated_files:
+                print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))
+
+
+                    
+
+    # def forwardKMPOI(joint_angles: POIMatrix) -> sf.Matrix44:
+    #     expr = [generalExponential(joint_twist_coordinates[i], joint_angles[i]) for i in range(pointsOfInterest["jointNum"])]
+    #     expr = reduce(lambda x, y: x*y, expr)
+    #     expr = expr*sf.Matrix(pointsOfInterest["end_effector_ref_config"])
+    #     return expr
     
-    codegen = Codegen.function(func=forwardKMPOI, config=CppConfig())
-    codegen_data = codegen.generate_function(output_dir="/tmp/sf_codegen_forwardKMPOI")
-    print("Forward Kinematics Map for the POI generated in {}:".format(codegen_data.output_dir))
-    for f in codegen_data.generated_files:
-        print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))
+
 
 ################################################# TESTING ######################################################
 # # Matrix slicing
@@ -295,3 +344,12 @@ if pointsOfInterest:
 # theta = sf.symbols("theta")
 # print(slice*theta)
 # print(generalExponential(sf.Matrix([1,1,1,1,1,1]), theta))
+
+##########################################
+# No such thing as an empty container to accumulate matrices with...have to convert to flatten to list, add, then convert then transpose
+# lst = []
+# x = sf.Matrix([1,2,3,4,5,6])
+# y = sf.Matrix([1,2,3,4,5,6])
+# lst += [x.to_flat_list()]
+# lst += [y.to_flat_list()]
+# print(sf.Matrix(lst).T)
