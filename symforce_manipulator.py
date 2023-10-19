@@ -285,7 +285,7 @@ if pointsOfInterest:
                     ret = ret.row_join(toAdd)
                 return ret
 
-            codegen = Codegen.function(func=BodyJacobian, config=CppConfig())
+            codegen = Codegen.function(func=BodyJacobian, name=key+"BodyJacobian", config=CppConfig())
             codegen_data = codegen.generate_function(output_dir="/tmp/sf_codegen_" + key + "_Body_Jacobian")
             print(key + " Body Jacobian for the POI generated in {}:".format(codegen_data.output_dir))
             for f in codegen_data.generated_files:
