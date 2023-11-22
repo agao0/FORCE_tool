@@ -78,8 +78,7 @@ import os
 #       -> each 0/1 toggles the generation of the POI's: Adjoint, AdjointInv, BodyJacobian, and
 #          SpatialJacobian in that order
 #
-# NOTE: Adjoint is the adjoint of the rigid body transformation from the inertial frame to the POI frame,
-# while AdjointInv is the adjoint of the rigid body transformation from the POI frame to the inertial frame
+# NOTE: Adjoint is the adjoint of the rigid body transformation from the POI frame to the inertial frame,
 #
 ############################################################################################################
 ############################################ HELPER FUNCTIONS ##############################################
@@ -192,7 +191,7 @@ else:
 if outputDir:
     path = os.path.join(os.getcwd(), outputDir[0].strip())
 else:
-    path = os.path.join(os.getcwd(), "symforce_output")
+    path = os.path.join(os.getcwd(), "force_output")
 try:
     os.mkdir(path)
 except FileExistsError:
@@ -344,6 +343,7 @@ for POI in points_of_interest:
         generateAdjointInv = points_of_interest[POI][4]
         generateBodyJacobian = points_of_interest[POI][5]
         generateSpatialJacobian = points_of_interest[POI][6]
+        generateFKM = points_of_interest[POI][7]
     except:
         raise Exception("CHECK POINTS OF INTEREST TOGGLES FORMATTING") 
 
@@ -419,5 +419,24 @@ for POI in points_of_interest:
         codegen_data = codegen.generate_function(output_dir=path, namespace=M_NAME)
         if verbose:
             print(POI.upper() + " Spatial Jacobian Map generated in {}:".format(codegen_data.output_dir))
+            for f in codegen_data.generated_files:
+                print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))
+
+    if generateFKM:
+        def forwardKinematicsMap(joint_angles: anglesMatrix) -> sf.Matrix44:
+            expr = [generalExponential(joint_twist_coordinates[i], joint_angles[i]) for i in range(points_of_interest[POI][0])]
+            expr = reduce(lambda x, y: x*y, expr)
+            position = sf.Matrix(points_of_interest[POI][1])
+            position = position.col_join(sf.Matrix([1]))
+            orientation = sf.Matrix(points_of_interest[POI][2])
+            orientation = orientation.col_join(sf.Matrix.zeros(1, 3))
+            g_st0 = orientation.row_join(position)
+            g_sttheta = expr*g_st0
+            return g_sttheta
+
+        codegen = Codegen.function(func= forwardKinematicsMap, name=POI+"ForwardKinematicsMap", config=CppConfig())
+        codegen_data = codegen.generate_function(output_dir=path, namespace=M_NAME)
+        if verbose:
+            print(POI.upper() + " Forward Kinematics Map generated in {}:".format(codegen_data.output_dir))
             for f in codegen_data.generated_files:
                 print("  |- {}\n".format(f.relative_to(codegen_data.output_dir)))

@@ -79,5 +79,6 @@
         "numeric": "cpp",
         "ranges": "cpp",
         "algorithm": "cpp"
-    }
+    },
+    "cmake.configureOnOpen": false
 }
