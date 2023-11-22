@@ -1,2 +1,0 @@
-/Library/Developer/CommandLineTools/usr/bin/ar qc libexoLeftDynamics.a CMakeFiles/exoLeftDynamics.dir/exoLeftDynamics.cpp.o
-/Library/Developer/CommandLineTools/usr/bin/ranlib libexoLeftDynamics.a

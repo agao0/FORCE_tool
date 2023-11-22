@@ -1,2 +1,0 @@
-/Library/Developer/CommandLineTools/usr/bin/ar qc libexoRightDynamics.a CMakeFiles/exoRightDynamics.dir/exoRightDynamics.cpp.o
-/Library/Developer/CommandLineTools/usr/bin/ranlib libexoRightDynamics.a
