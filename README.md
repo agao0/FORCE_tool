@@ -1,4 +1,4 @@
-# **Fast Optimal Robotics Codegen---Ermine** (FORCE)
+# **Fast Optimal Robotics Codegen-Ermine** (FORCE)
 FORCE is a **symforce-based tool** that is used to generate C++ code of common manipulator expressions/functions. The key benefits of symforce are that it uses symbolic variables in its processing to generate C++ code that is computationally efficient, which will be useful for real-time control, and that its code-generation is done relatively fast.
 
 Developed for the Bionics lab at UCLA. 
