@@ -64,8 +64,3 @@ Rather than creating a JSON file from scratch, it is recommended to modify the e
 
 ## Testing
 A comparison of this tool versus a previous tool that was built using sympy was performed. The results are stored in a Jupyter notebook within the `testing` folder, based on `errors.txt`. Similarly, a skeleton version of the testing code is stored within `testing/tests`, and can be modified or ran using CMake.
-## License
-
-MIT
-
-**Free Software, Cool!**
